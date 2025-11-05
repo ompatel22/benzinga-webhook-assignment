@@ -7,6 +7,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.*;
 
 @Slf4j
@@ -23,51 +26,113 @@ public class BatchService {
     @Value("${app.post-endpoint}")
     private String postEndpoint;
 
-    private final ConcurrentLinkedQueue<LogPayload> queue = new ConcurrentLinkedQueue<>();
+    @Value("${app.max-queue-size:10000}")
+    private int maxQueueSize;
 
-    //using a single-threaded scheduled executor ensures - only one scheduled task runs at any time
-    //the next run waits until the current run finishes, so the queue is always accessed in a thread-safe, predictable order
-    //so by this we can avoid overlapping
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    // BlockingQueue - A bounded, thread-safe queue with a fixed capacity
+    // Prevents memory issues by rejecting new items when full
+    // Multiple threads can safely add/remove items concurrently
+    // Request thread can add logs into queue and Batch sender thread can remove logs from queue at the same time
+    private BlockingQueue<LogPayload> logQueue;
 
-    //newCachedThreadPool() = create new threads when needed or reuse idle threads for batch-processing tasks to allow multiple batch-processing tasks to happen in parallel
-    private final ExecutorService senderExecutor = Executors.newCachedThreadPool();
+    // Using a single-threaded scheduled executor ensures only one scheduled task runs at any time
+    // The next run waits until the current run finishes, avoiding multiple small or out-of-order batches
+    private final ScheduledExecutorService batchScheduler = Executors.newSingleThreadScheduledExecutor();
 
-     private final PostService postService;
+    // Using a single-threaded executor ensures only one sendBatch() executes at a time
+    // Prevents race conditions when size trigger and interval trigger fire simultaneously
+    private final ExecutorService batchSender = Executors.newSingleThreadExecutor();
+
+    private final BatchPostService batchPostService;
 
     @PostConstruct
     public void init() {
-        log.info("BatchService initialized - batchSize={}, batchIntervalSeconds={}, postEndpoint={}",
-                batchSize, batchIntervalSeconds, postEndpoint);
 
-        // Schedule periodic batch process
-        scheduler.scheduleAtFixedRate(this::processBatchIfQueueIsNotEmpty, batchIntervalSeconds, batchIntervalSeconds, TimeUnit.SECONDS);
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("Invalid batch size");
+        }
+
+        logQueue = new ArrayBlockingQueue<>(maxQueueSize);
+
+        log.info("BatchService initialized - batchSize={}, batchIntervalSeconds={}, postEndpoint={}, maxQueueSize={}",
+                batchSize, batchIntervalSeconds, postEndpoint, maxQueueSize);
+
+        // Schedule periodic batch-sends
+        batchScheduler.scheduleAtFixedRate(this::sendBatchIfQueueNotEmpty, batchIntervalSeconds, batchIntervalSeconds, TimeUnit.SECONDS);
+        log.info("Batch scheduler started at a fixed rate of {} seconds.", batchIntervalSeconds);
     }
 
-    public void addLog(LogPayload record) {
-        queue.add(record);
-        if (queue.size() >= batchSize) {
-            // process asynchronously to avoid blocking main thread
-            senderExecutor.submit(this::processBatch);
+    public boolean addLogPayload(LogPayload logPayload) {
+        // Using offer() for non-blocking add - returns false if queue is full
+        boolean added = logQueue.offer(logPayload);
+
+        if (added) {
+            log.info("Received payload — current queue size: {}", logQueue.size());
+
+            // If enough log payloads are in queue, trigger an immediate batch send asynchronously
+            if (logQueue.size() >= batchSize) {
+                batchSender.submit(this::sendBatch);
+            }
+        } else {
+            log.warn("Queue full (size={}), rejecting payload - {}", maxQueueSize, logPayload);
+        }
+        return added;
+    }
+
+    private void sendBatchIfQueueNotEmpty() {
+        if (!logQueue.isEmpty()) {
+            batchSender.submit(this::sendBatch);
         }
     }
 
-    private void processBatchIfQueueIsNotEmpty() {
-        if (!queue.isEmpty()) {
-            // process asynchronously to avoid blocking main thread
-            senderExecutor.submit(this::processBatch);
-        }
-    }
+    public void sendBatch() {
+        List<LogPayload> batch = new ArrayList<>();
 
-    public void processBatch() {
-        //logic
+        // Using drainTo for efficient batch extraction
+        logQueue.drainTo(batch, batchSize);
+
+        if (batch.isEmpty()) return;
+
+        long start = System.nanoTime();
+        boolean success = batchPostService.postBatchWithRetries(batch, 3, Duration.ofSeconds(2));
+        long durationMs = (System.nanoTime() - start) / 1_000_000;
+
+        log.info("Sent batch size={}, success={}, duration in ms={}", batch.size(), success, durationMs);
+
+        if (!success) {
+            log.error("Failed to post batch after retries. Exiting.");
+            System.exit(1);
+        }
     }
 
     @PreDestroy
     public void shutdown() {
-        log.info("Shutting down BatchService - flushing remaining items");
-        processBatchIfQueueIsNotEmpty();
-        scheduler.shutdown();
-        senderExecutor.shutdown();
+        log.info("Shutting down BatchService - flushing remaining items, queue size={}", logQueue.size());
+
+        // Flush all remaining batches
+        while (!logQueue.isEmpty()) {
+            sendBatch();
+        }
+
+        batchScheduler.shutdown();
+        batchSender.shutdown();
+
+        try {
+            // Wait for tasks to complete (with timeout)
+            if (!batchSender.awaitTermination(30, TimeUnit.SECONDS)) {
+                log.warn("BatchSender did not terminate in time, forcing shutdown");
+                batchSender.shutdownNow();
+            }
+            if (!batchScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                log.warn("BatchScheduler did not terminate in time, forcing shutdown");
+                batchScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            log.error("Shutdown interrupted", e);
+            batchSender.shutdownNow();
+            batchScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        log.info("BatchService shutdown complete");
     }
 }

@@ -5,6 +5,7 @@ import com.benzinga.assignment.webhook_example.services.BatchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,15 +18,23 @@ public class WebhookController {
 
     private final BatchService batchService;
 
+    // GET endpoint to check health of the application
     @GetMapping("/healthz")
     public  ResponseEntity<String> healthCheck() {
         log.info("GET request received at /healthz");
         return ResponseEntity.ok("OK");
     }
+
+    // POST endpoint to accept JSON payloads
     @PostMapping("/log")
-    public ResponseEntity<LogPayload> receiveLog(@RequestBody LogPayload logPayload) {
+    public ResponseEntity<String> receiveLog(@RequestBody LogPayload logPayload) {
         log.info("POST request received at /log endpoint with payload - {}", logPayload);
-        batchService.addLog(logPayload);
-        return ResponseEntity.ok(logPayload);
+        boolean accepted = batchService.addLogPayload(logPayload);
+
+        if (accepted) {
+            return ResponseEntity.ok("Log Payload Accepted");
+        } else {
+            return new ResponseEntity<>("Queue is full, please retry later",HttpStatus.SERVICE_UNAVAILABLE);
+        }
     }
 }
