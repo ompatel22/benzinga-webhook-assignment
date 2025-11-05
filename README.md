@@ -1,4 +1,4 @@
-# Benzinga - Backend Java Assignment - A Spring Boot–based Webhook Receiver
+# Benzinga - Backend Java Assignment - Webhook Receiver
 
 This project is a webhook receiver built with Java and Spring Boot. It is designed to accept JSON log payloads using POST HTTP requests, batch them in memory, and forward them asynchronously to an external endpoint based on configurable batch size and batch interval parameters while handling retries.
 
