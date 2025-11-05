@@ -17,14 +17,11 @@ import java.util.concurrent.*;
 @RequiredArgsConstructor
 public class BatchService {
 
-    @Value("${app.batch-size}")
+    @Value("${app.batch.size}")
     private int batchSize;
 
-    @Value("${app.batch-interval-seconds}")
-    private int batchIntervalSeconds;
-
-    @Value("${app.post-endpoint}")
-    private String postEndpoint;
+    @Value("${app.batch.interval-ms}")
+    private int batchIntervalMilliSeconds;
 
     @Value("${app.max-queue-size:10000}")
     private int maxQueueSize;
@@ -54,11 +51,11 @@ public class BatchService {
 
         logQueue = new ArrayBlockingQueue<>(maxQueueSize);
 
-        log.info("BatchService initialized - batchSize={}, batchIntervalSeconds={}, postEndpoint={}, maxQueueSize={}",
-                batchSize, batchIntervalSeconds, postEndpoint, maxQueueSize);
+        log.info("BatchService initialized - batchSize={}, batchIntervalMilliSeconds={}, maxQueueSize={}",
+                batchSize, batchIntervalMilliSeconds, maxQueueSize);
 
-        batchScheduler.scheduleAtFixedRate(this::sendBatchIfQueueNotEmpty, batchIntervalSeconds, batchIntervalSeconds, TimeUnit.SECONDS);
-        log.info("Batch scheduler started at a fixed rate of {} seconds.", batchIntervalSeconds);
+        batchScheduler.scheduleAtFixedRate(this::sendBatchIfQueueNotEmpty, batchIntervalMilliSeconds, batchIntervalMilliSeconds, TimeUnit.MILLISECONDS);
+        log.info("Batch scheduler started at a fixed rate of {} seconds.", batchIntervalMilliSeconds);
     }
 
     public boolean addLogPayload(LogPayload logPayload) {
