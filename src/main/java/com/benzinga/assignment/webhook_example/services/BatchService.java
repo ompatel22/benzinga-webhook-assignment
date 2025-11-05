@@ -57,13 +57,11 @@ public class BatchService {
         log.info("BatchService initialized - batchSize={}, batchIntervalSeconds={}, postEndpoint={}, maxQueueSize={}",
                 batchSize, batchIntervalSeconds, postEndpoint, maxQueueSize);
 
-        // Schedule periodic batch-sends
         batchScheduler.scheduleAtFixedRate(this::sendBatchIfQueueNotEmpty, batchIntervalSeconds, batchIntervalSeconds, TimeUnit.SECONDS);
         log.info("Batch scheduler started at a fixed rate of {} seconds.", batchIntervalSeconds);
     }
 
     public boolean addLogPayload(LogPayload logPayload) {
-        // Using offer() for non-blocking add - returns false if queue is full
         boolean added = logQueue.offer(logPayload);
 
         if (added) {
@@ -87,20 +85,20 @@ public class BatchService {
 
     public void sendBatch() {
         List<LogPayload> batch = new ArrayList<>();
-
-        // Using drainTo for efficient batch extraction
         logQueue.drainTo(batch, batchSize);
 
         if (batch.isEmpty()) return;
 
-        long start = System.nanoTime();
-        boolean success = batchPostService.postBatchWithRetries(batch, 3, Duration.ofSeconds(2));
-        long durationMs = (System.nanoTime() - start) / 1_000_000;
+        long startTime = System.nanoTime();
+        int statusCode = batchPostService.postBatchWithRetries(batch, 3, Duration.ofSeconds(2));
+        long durationMs = (System.nanoTime() - startTime) / 1_000_000;
 
-        log.info("Sent batch size={}, success={}, duration in ms={}", batch.size(), success, durationMs);
+        log.info("Sent batch size={}, statusCode={}, duration in ms={}",
+                batch.size(), statusCode, durationMs);
 
-        if (!success) {
-            log.error("Failed to post batch after retries. Exiting.");
+        // Exit after 3 retry failures (as per requirements)
+        if (statusCode == -1) {
+            log.error("Failed to post batch after 3 retries. Exiting application.");
             System.exit(1);
         }
     }
