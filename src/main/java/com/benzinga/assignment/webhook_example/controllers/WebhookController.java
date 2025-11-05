@@ -2,6 +2,7 @@ package com.benzinga.assignment.webhook_example.controllers;
 
 import com.benzinga.assignment.webhook_example.dtos.LogPayload;
 import com.benzinga.assignment.webhook_example.services.BatchService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -27,7 +28,7 @@ public class WebhookController {
 
     // POST endpoint to accept JSON payloads
     @PostMapping("/log")
-    public ResponseEntity<String> receiveLog(@RequestBody LogPayload logPayload) {
+    public ResponseEntity<String> receiveLog(@Valid @RequestBody LogPayload logPayload) {
         log.info("POST request received at /log endpoint with payload - {}", logPayload);
         boolean accepted = batchService.addLogPayload(logPayload);
 

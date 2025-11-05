@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-example
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhook-example
+  template:
+    metadata:
+      labels:
+        app: webhook-example
+    spec:
+      containers:
+        - name: webhook-example
+          image: ompatel22/webhook-example:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: APP_BATCH_SIZE
+              value: "3"
+            - name: APP_BATCH_INTERVAL_MS
+              value: "5000"
+            - name: APP_POST_ENDPOINT
+              value: "https://1f69832a9cfbacc44e7bg1n4rdayyyyyb.oast.me"
+            - name: APP_MAX_QUEUE_SIZE
+              value: "10000"
