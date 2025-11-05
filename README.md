@@ -232,6 +232,12 @@ The application is configured using environment variables. Default values are pr
     - Health Check: `GET <base-url>/healthz`
     - Log Ingestion: `POST <base-url>/log` (use example payload above)
 
+**Note: If you are making any changes in the code and creating a new image and pushing it to your Docker Hub or any other registry, you can change the image property in the deployment.yaml file:**
+
+   ```bash
+   image: your-dockerhub-username/your-image-name:tag
+   ```
+
 ## How to Test
 
 Run the unit tests for the application:
