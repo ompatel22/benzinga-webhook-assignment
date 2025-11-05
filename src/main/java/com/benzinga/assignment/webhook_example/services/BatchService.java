@@ -66,6 +66,7 @@ public class BatchService {
 
             // If enough log payloads are in queue, trigger an immediate batch send asynchronously
             if (logQueue.size() >= batchSize) {
+                log.info("batch-size reached (batch size={}), sending batch..", batchSize);
                 batchSender.submit(this::sendBatch);
             }
         } else {
@@ -76,6 +77,7 @@ public class BatchService {
 
     private void sendBatchIfQueueNotEmpty() {
         if (!logQueue.isEmpty()) {
+            log.info("batch-interval time reached (batch-interval time in milliseconds={}), scheduler is sending batch of size {}", batchIntervalMilliSeconds, logQueue.size());
             batchSender.submit(this::sendBatch);
         }
     }

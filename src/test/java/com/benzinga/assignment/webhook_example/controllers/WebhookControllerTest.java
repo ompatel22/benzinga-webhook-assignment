@@ -34,6 +34,7 @@ class WebhookControllerTest {
 
     @TestConfiguration
     static class TestConfig {
+
         @Bean
         BatchService batchService() {
             return Mockito.mock(BatchService.class);
@@ -115,5 +116,4 @@ class WebhookControllerTest {
         return new LogPayload(999, 999.99, "Complex test payload", meta, true
         );
     }
-
 }
